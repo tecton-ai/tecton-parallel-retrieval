@@ -1,7 +1,7 @@
 from setuptools import setup
 
 setup(name='tecton_parallel_retrieval',
-            version='0.0.12',
+            version='0.0.13',
             description='[private preview] Parallel feature retrieval on Databricks for Tecton',
             author='Tecton',
             packages=['tecton_parallel_retrieval'],

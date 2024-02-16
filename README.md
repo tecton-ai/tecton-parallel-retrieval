@@ -40,7 +40,7 @@ To generate a whl file run the following in your terminal...
 ```bash
 
 pip install --upgrade build
-build
+python -m build
 
 ```
 
