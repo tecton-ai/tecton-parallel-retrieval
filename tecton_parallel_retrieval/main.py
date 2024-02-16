@@ -28,11 +28,11 @@ def get_partition_names(spark, path, partition_col):
     except AnalysisException:
         return set()
 
-def generate_splits(spark, spine_path, partition_col, num_splits, output_path):
+def generate_splits(spark, spine_path, partition_col, num_splits, output_path, timestamp_key):
     spine = spark.read.parquet(spine_path)
     if partition_col is None:
         tecton_ds_col = "__tecton_util_ds"
-        spine = spine.withColumn(tecton_ds_col, F.to_date(spine["timestamp"]))
+        spine = spine.withColumn(tecton_ds_col, F.to_date(spine[timestamp_key]))
     else:
         tecton_ds_col = partition_col
     logger.info("Generating splits via computing data counts")
@@ -226,7 +226,6 @@ def run_parallel_query(
         databricks_driver_node_type=databricks_driver_node_type,
         databricks_worker_node_type=databricks_worker_node_type,
         databricks_worker_node_count=databricks_worker_node_count)
-    splits = generate_splits(spark, spine_path, spine_partition_col, max_splits, output_path)
+    splits = generate_splits(spark, spine_path, spine_partition_col, max_splits, output_path, timestamp_key)
     launch_jobs_and_wait(databricks_client, splits, max_parallel_jobs, cluster_spec, workspace_name, feature_service_name, timestamp_key, spine_path, output_path)
     logger.info("Completed successfully")
-
