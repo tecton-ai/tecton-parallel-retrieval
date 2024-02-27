@@ -28,27 +28,31 @@ def get_partition_names(spark, path, partition_col):
     except AnalysisException:
         return set()
 
-def generate_splits(spark, spine_path, partition_col, num_splits, output_path, timestamp_key):
+def generate_splits(spark, spine_path, spine_partition_col, num_splits, output_path, timestamp_key):
     spine = spark.read.parquet(spine_path)
-    if partition_col is None:
+    if spine_partition_col is None:
         tecton_ds_col = "__tecton_util_ds"
         spine = spine.withColumn(tecton_ds_col, F.to_date(spine[timestamp_key]))
     else:
-        tecton_ds_col = partition_col
+        tecton_ds_col = spine_partition_col
     logger.info("Generating splits via computing data counts")
     spine_with_date_counts = spine.groupBy(tecton_ds_col).count().collect()
     logger.info("Looking for existing partitions in output_path")
     existing_partitions = get_partition_names(spark, output_path, "ds")
     logger.info("Found existing partitions: " + str(sorted(list(existing_partitions))))
+    # Calculate remaining spine partitions to compute ghf for
     spine_with_date_counts = [
         r for r in spine_with_date_counts
         if str(r[tecton_ds_col]) not in existing_partitions
     ]
+    if len(spine_with_date_counts) == 0:
+        # This time range has already been computed and written to the output path
+        return []
     sorted_data_counts = sorted(spine_with_date_counts, key=lambda r: r[tecton_ds_col])
     total_sum = sum(r["count"] for r in sorted_data_counts)
     count_per_split = total_sum / num_splits
 
-    if partition_col is not None:
+    if spine_partition_col is not None:
         splits = [[]]
         split_count = 0
 
@@ -61,7 +65,7 @@ def generate_splits(spark, spine_path, partition_col, num_splits, output_path, t
 
         splits = [
             {
-                "spine_partition_col": partition_col,
+                "spine_partition_col": spine_partition_col,
                 "spine_partition_names": ",".join(s),
                 "spine_timestamp_range": "",
                 "name": f"{idx + 1}/{len(splits)}"
@@ -69,12 +73,14 @@ def generate_splits(spark, spine_path, partition_col, num_splits, output_path, t
         ]
     else:
         splits = []
+        # Calculate time range splits for spine. Start time is inclusive, end time is exclusive.
         split_start = sorted_data_counts[0][tecton_ds_col]
         split_count = sorted_data_counts[0]["count"]
         for row in sorted_data_counts[1:]:
             if split_count > count_per_split:
                 splits.append((split_start, row[tecton_ds_col]))
                 split_count = 0
+                split_start = row[tecton_ds_col]
             split_count += row["count"]
         split_end_final = sorted_data_counts[-1][tecton_ds_col] + datetime.timedelta(days=1)
         splits.append((split_start, split_end_final))
@@ -126,21 +132,23 @@ def get_cluster_spec(
     return cluster_spec
 
 
-def launch_job(databricks_client, split, cluster_spec, workspace_name, feature_service_name, timestamp_key, spine_path, output_path):
+def launch_job(databricks_client, split, cluster_spec, workspace_name, feature_service_name, timestamp_key, spine_path, output_path, databricks_secret_for_tecton_api_token):
+    job_params = {
+        "feature_service_name": feature_service_name,
+        "workspace_name": workspace_name,
+        "spine_path": spine_path,
+        "spine_partition_col": split["spine_partition_col"],
+        "spine_partition_names": split["spine_partition_names"],
+        "spine_timestamp_range": split["spine_timestamp_range"],
+        "output_path": output_path,
+        "timestamp_key": timestamp_key,
+    }
+    if databricks_secret_for_tecton_api_token:
+        job_params["databricks_secret_for_tecton_api_token"] = databricks_secret_for_tecton_api_token
     wheel_task = PythonWheelTask(
         entry_point="retrieval_task",
         package_name="tecton_parallel_retrieval",
-        named_parameters={
-            "feature_service_name": feature_service_name,
-            "workspace_name": workspace_name,
-            "spine_path": spine_path,
-            "spine_partition_col": split["spine_partition_col"],
-            "spine_partition_names": split["spine_partition_names"],
-            "spine_timestamp_range": split["spine_timestamp_range"],
-            "output_path": output_path,
-            "timestamp_key": timestamp_key
-
-        }
+        named_parameters=job_params
     )
     task = SubmitTask(
         task_key="Task1",
@@ -160,7 +168,7 @@ def launch_job(databricks_client, split, cluster_spec, workspace_name, feature_s
     )
     return job
 
-def launch_jobs_and_wait(databricks_client, splits, parallel_job_count, cluster_spec, workspace_name, feature_service_name, timestamp_key, spine_path, output_path):
+def launch_jobs_and_wait(databricks_client, splits, parallel_job_count, cluster_spec, workspace_name, feature_service_name, timestamp_key, spine_path, output_path, databricks_secret_for_tecton_api_token):
     active_jobs = {}
     remaining_splits = splits[::-1]
     while remaining_splits or active_jobs:
@@ -182,7 +190,7 @@ def launch_jobs_and_wait(databricks_client, splits, parallel_job_count, cluster_
         # launch jobs
         while remaining_splits and len(active_jobs) < parallel_job_count:
             split = remaining_splits.pop()
-            job = launch_job(databricks_client, split, cluster_spec, workspace_name, feature_service_name, timestamp_key, spine_path, output_path)
+            job = launch_job(databricks_client, split, cluster_spec, workspace_name, feature_service_name, timestamp_key, spine_path, output_path, databricks_secret_for_tecton_api_token)
             run_id = job.response.run_id
             active_jobs[run_id] = split
             logger.info(f"Launched run {run_id} for split {split['name']}")
@@ -215,7 +223,8 @@ def run_parallel_query(
         databricks_runtime_version: str,
         databricks_driver_node_type: str,
         databricks_worker_node_type: str,
-        databricks_worker_node_count: int
+        databricks_worker_node_count: int,
+        databricks_secret_for_tecton_api_token: Optional[str] = None
 ):
     spark = SparkSession.builder.getOrCreate()
     databricks_client = WorkspaceClient()
@@ -227,5 +236,8 @@ def run_parallel_query(
         databricks_worker_node_type=databricks_worker_node_type,
         databricks_worker_node_count=databricks_worker_node_count)
     splits = generate_splits(spark, spine_path, spine_partition_col, max_splits, output_path, timestamp_key)
-    launch_jobs_and_wait(databricks_client, splits, max_parallel_jobs, cluster_spec, workspace_name, feature_service_name, timestamp_key, spine_path, output_path)
+    if len(splits) == 0:
+        logger.info("Data already exists in the output_path for the time range provided in the spine. No jobs will be launched.")
+        return
+    launch_jobs_and_wait(databricks_client, splits, max_parallel_jobs, cluster_spec, workspace_name, feature_service_name, timestamp_key, spine_path, output_path, databricks_secret_for_tecton_api_token)
     logger.info("Completed successfully")
