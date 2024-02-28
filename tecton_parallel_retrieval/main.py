@@ -156,7 +156,7 @@ def launch_job(databricks_client, split, cluster_spec, workspace_name, feature_s
         python_wheel_task=wheel_task,
         libraries=[
             Library(pypi=PythonPyPiLibrary(package="tecton")),
-            Library(pypi=PythonPyPiLibrary(package="tecton-parallel-retrieval"))
+            Library(pypi=PythonPyPiLibrary(package="tecton-parallel-retrieval==0.0.15"))
         ]
     )
     split_name = split["name"]
