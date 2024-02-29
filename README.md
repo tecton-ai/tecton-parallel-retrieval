@@ -44,7 +44,8 @@ python -m build
 
 ```
 
-to upload it to pypi...
+The following command uploads it to pypi.
+Make sure you update the version in setup.py, as well as the dependency versions in setup.py and the hardcoded databricks job dependencies in main.py
 
 ```bash
 
@@ -52,5 +53,3 @@ pip install --upgrade twine
 twine upload --repository pypi dist/*
 
 ```
-
-make sure you update the version in setup.py as well

@@ -9,7 +9,7 @@ setup(name='tecton_parallel_retrieval',
             install_requires=[
                 "databricks-sdk",
                 "pyspark",
-                "tecton",
+                "tecton ==0.8.*",
             ],
             setup_requires=["setuptools", "wheel"],
             url="https://tecton.ai",
