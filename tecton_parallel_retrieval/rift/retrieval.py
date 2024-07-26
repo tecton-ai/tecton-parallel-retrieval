@@ -72,7 +72,7 @@ def start_dataset_jobs_in_parallel(df: TectonDataFrame, dataset_name, num_splits
     if isinstance(params, GetFeaturesForEventsParams):
         chunks = split_spine(params.events, params.join_keys, num_splits, strategy=split_strategy)
         for idx, spine_chunk in enumerate(chunks):
-            subtask_params = copy.deepcopy(params)
+            subtask_params = copy.copy(params)
             subtask_params.events = spine_chunk
             subtask_df = get_features_from_params(subtask_params)
             
@@ -104,3 +104,4 @@ def retrieve_dataset(workspace, dataset_name):
         raise ValueError(f"No datasets found with name starting with '{dataset_name}:'")
     
     return MultiDataset(datasets)
+
