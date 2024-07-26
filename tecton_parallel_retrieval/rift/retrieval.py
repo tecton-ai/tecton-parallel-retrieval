@@ -47,7 +47,9 @@ class MultiDatasetJob:
                     j.wait_for_completion(timeout=remaining_time)
                     if j._job.state == 'SUCCESS':
                         break
-                except Exception as e:
+                except TimeoutError:
+                    raise  # Re-raise the TimeoutError
+                except Exception:
                     continue
 
     def to_pandas(self):        
