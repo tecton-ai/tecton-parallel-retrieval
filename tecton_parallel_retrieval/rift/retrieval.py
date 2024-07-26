@@ -48,8 +48,6 @@ class MultiDatasetJob:
                     if j._job.state == 'SUCCESS':
                         break
                 except Exception as e:
-                    # Re-fetch the job status here
-                    print(f"Retrying job {j} due to error: {e}")
                     continue
 
     def to_pandas(self):        
