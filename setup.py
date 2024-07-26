@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='tecton_parallel_retrieval',
-    version='0.1.0b1',
+    version='0.1.0b2',
     description='[private preview] Parallel feature retrieval for Tecton',
     author='Tecton',
     packages=find_packages(),
