@@ -1,14 +1,15 @@
 import copy
 import pandas
-from typing import List
+from typing import List, Optional
 from datetime import datetime, timedelta
 
 from tecton._internals.querytree_api import get_features_from_params
 from tecton_core import data_processing_utils
 
-from tecton_core.query.retrieval_params import GetFeaturesForEventsParams, GetFeaturesInRangeParams
+from tecton_core.query.retrieval_params import GetFeaturesForEventsParams
 from tecton.framework.data_frame import TectonDataFrame
-from tecton.framework import jobs
+from tecton._internals import materialization_api
+from tecton.framework.dataset import SavedDataset
 
 
 def split_spine(spine: pandas.DataFrame, join_keys: List[str], split_count: int, strategy: str) -> List[pandas.DataFrame]:
@@ -43,9 +44,15 @@ class MultiDatasetJob:
     def to_pandas(self):        
         # Calculate how many jobs have completed.
         success_count = sum(j._job.state == 'SUCCESS' for j in self._jobs)
-        assert success_count == self._jobs.count, f"Only {success_count} out of {len(self._jobs)} jobs have completed successfully."
+        assert success_count == len(self._jobs), f"Only {success_count} out of {len(self._jobs)} jobs have completed successfully."
         return pandas.concat([j.get_dataset().to_pandas() for j in self._jobs])
 
+class MultiDataset:
+    def __init__(self, datasets: List[SavedDataset]):
+        self._datasets = datasets
+
+    def to_pandas(self) -> pandas.DataFrame:        
+        return pandas.concat([ds.to_pandas() for ds in self._datasets])    
 
 def start_dataset_jobs_in_parallel(df: TectonDataFrame, dataset_name, num_splits, split_strategy='even', **kwargs):
     params = df._request_params
@@ -54,7 +61,7 @@ def start_dataset_jobs_in_parallel(df: TectonDataFrame, dataset_name, num_splits
     if isinstance(params, GetFeaturesForEventsParams):
         chunks = split_spine(params.events, params.join_keys, num_splits, strategy=split_strategy)
         for idx, spine_chunk in enumerate(chunks):
-            subtask_params = copy.copy(params)
+            subtask_params = copy.deepcopy(params)
             subtask_params.events = spine_chunk
             subtask_df = get_features_from_params(subtask_params)
             
@@ -66,3 +73,23 @@ def start_dataset_jobs_in_parallel(df: TectonDataFrame, dataset_name, num_splits
         raise RuntimeError("Only get_features_for_events is currently supported")
 
     return MultiDatasetJob(jobs)
+
+def retrieve_dataset(workspace, dataset_name):
+    datasets = []
+    for remote_dataset_name in workspace.list_datasets():
+        if remote_dataset_name.startswith(dataset_name + ":"):
+             datasets.append(workspace.get_dataset(remote_dataset_name))
+    
+    # Sort the datasets by the numeric index in the dataset name
+    def get_index(ds):
+        try:
+            return int(ds.name.split(':')[-1])
+        except ValueError:
+            return float('inf')
+    
+    datasets = sorted(datasets, key=get_index)
+    
+    if not datasets:
+        raise ValueError(f"No datasets found with name starting with '{dataset_name}:'")
+    
+    return MultiDataset(datasets)
