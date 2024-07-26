@@ -1,6 +1,6 @@
 import copy
 import pandas
-from typing import List, Optional
+from typing import List
 from datetime import datetime, timedelta
 
 from tecton._internals.querytree_api import get_features_from_params
@@ -8,7 +8,6 @@ from tecton_core import data_processing_utils
 
 from tecton_core.query.retrieval_params import GetFeaturesForEventsParams
 from tecton.framework.data_frame import TectonDataFrame
-from tecton._internals import materialization_api
 from tecton.framework.dataset import SavedDataset
 
 
@@ -39,7 +38,19 @@ class MultiDatasetJob:
         deadline = datetime.now() + timeout if timeout else None
 
         for j in self._jobs:
-            j.wait_for_completion(timeout=deadline - datetime.now() if deadline else None)
+            while True:
+                try:
+                    remaining_time = deadline - datetime.now() if deadline else None
+                    if remaining_time and remaining_time.total_seconds() <= 0:
+                        raise TimeoutError("The operation timed out")
+
+                    j.wait_for_completion(timeout=remaining_time)
+                    if j._job.state == 'SUCCESS':
+                        break
+                except Exception as e:
+                    # Re-fetch the job status here
+                    print(f"Retrying job {j} due to error: {e}")
+                    continue
 
     def to_pandas(self):        
         # Calculate how many jobs have completed.
