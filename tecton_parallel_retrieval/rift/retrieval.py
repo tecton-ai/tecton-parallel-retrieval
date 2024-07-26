@@ -38,7 +38,7 @@ class MultiDatasetJob:
         deadline = datetime.now() + timeout if timeout else None
 
         for j in self._jobs:
-            j.wait_for_completion(timeout=deadline - datetime.now())
+            j.wait_for_completion(timeout=deadline - datetime.now() if deadline else None)
 
     def to_pandas(self):        
         # Calculate how many jobs have completed.
