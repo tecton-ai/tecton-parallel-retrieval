@@ -6,12 +6,13 @@ clusters. This feature is currently in alpha and is subject to change.
 
 This can be found on pypi https://pypi.org/project/tecton-parallel-retrieval/
 
-## How to Run
+## How to Run(Spark)
 
 ```python
 
-import tecton_parallel_retrieval
-tecton_parallel_retrieval.run_parallel_query(
+from tecton_parallel_retrieval.spark import run_parallel_query
+
+run_parallel_query(
         spine_path = "s3://path/to/your/spine", # Must be Parquet format
         spine_partition_col="ds", # None if un-partitioned
         output_path = "s3://path/to/output",
@@ -30,6 +31,22 @@ tecton_parallel_retrieval.run_parallel_query(
         databricks_runtime_version = "9.1.x-scala2.12",
         databricks_worker_node_count = 1,
     )
+
+```
+
+## How to Run(Rift)
+
+```python
+
+from tecton_parallel_retrieval.rift import start_dataset_jobs_in_parallel, retrieve_dataset
+
+workspace = tecton.get_workspace('your_workspace')
+fv = workspace.get_feature_view('your_feature_view')
+df = fv.get_features_for_events(events=spine, timestamp_key='your_timestamp_key')
+jobs = retrieval.start_dataset_jobs_in_parallel(df, "your_dataset_name", 3)
+jobs.wait_for_all_jobs()
+ds = retrieve_dataset(workspace, "your_dataset_name")
+
 
 ```
 
