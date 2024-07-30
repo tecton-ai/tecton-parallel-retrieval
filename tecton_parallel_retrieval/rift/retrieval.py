@@ -9,6 +9,8 @@ from tecton_core import data_processing_utils
 from tecton_core.query.retrieval_params import GetFeaturesForEventsParams
 from tecton.framework.data_frame import TectonDataFrame
 from tecton.framework.dataset import SavedDataset
+from tecton._internals import materialization_api
+from tecton_core.id_helper import IdHelper
 
 
 def split_spine(spine: pandas.DataFrame, join_keys: List[str], split_count: int, strategy: str) -> List[pandas.DataFrame]:
@@ -57,6 +59,10 @@ class MultiDatasetJob:
         success_count = sum(j._job.state == 'SUCCESS' for j in self._jobs)
         assert success_count == len(self._jobs), f"Only {success_count} out of {len(self._jobs)} jobs have completed successfully."
         return pandas.concat([j.get_dataset().to_pandas() for j in self._jobs])
+    
+    def cancel(self):
+        for j in self._jobs:
+            j.cancel_job()
 
 class MultiDataset:
     def __init__(self, datasets: List[SavedDataset]):
@@ -64,6 +70,11 @@ class MultiDataset:
 
     def to_pandas(self) -> pandas.DataFrame:        
         return pandas.concat([ds.to_pandas() for ds in self._datasets])    
+    
+    def cancel_jobs(self):
+        for ds in self._datasets:
+            job_id = IdHelper.to_string(ds._proto.saved_dataset.creation_task_id)
+            materialization_api.cancel_dataset_job(ds.name, ds._proto.info.workspace, job_id)
 
 def start_dataset_jobs_in_parallel(df: TectonDataFrame, dataset_name, num_splits, split_strategy='even', **kwargs):
     params = df._request_params
@@ -104,4 +115,9 @@ def retrieve_dataset(workspace, dataset_name):
         raise ValueError(f"No datasets found with name starting with '{dataset_name}:'")
     
     return MultiDataset(datasets)
+
+
+def cancel_dataset_jobs(workspace, dataset_name):
+    multi_dataset = retrieve_dataset(workspace, dataset_name)
+    multi_dataset.cancel()
 
