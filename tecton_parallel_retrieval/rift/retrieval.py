@@ -58,7 +58,7 @@ class MultiDatasetJob:
         # Calculate how many jobs have completed.
         success_count = sum(j._job.state == 'SUCCESS' for j in self._jobs)
         assert success_count == len(self._jobs), f"Only {success_count} out of {len(self._jobs)} jobs have completed successfully."
-        return pandas.concat([j.get_dataset().to_pandas() for j in self._jobs])
+        return pandas.concat([j.get_dataset().to_dataframe().to_pandas() for j in self._jobs])
     
     def cancel(self):
         for j in self._jobs:
@@ -69,7 +69,7 @@ class MultiDataset:
         self._datasets = datasets
 
     def to_pandas(self) -> pandas.DataFrame:        
-        return pandas.concat([ds.to_pandas() for ds in self._datasets])    
+        return pandas.concat([ds.to_dataframe().to_pandas() for ds in self._datasets])    
     
     def cancel_jobs(self):
         for ds in self._datasets:
