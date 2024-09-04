@@ -32,6 +32,7 @@ def split_spine(spine: pandas.DataFrame, join_keys: List[str], split_count: int,
         error = f"Unknown spine split strategy: {strategy}"
         raise ValueError(error)
 
+
 class MultiDatasetJob:
     def __init__(self, jobs):
         self._jobs = jobs
@@ -47,77 +48,100 @@ class MultiDatasetJob:
                         raise TimeoutError("The operation timed out")
 
                     j.wait_for_completion(timeout=remaining_time)
-                    if j._job.state == 'SUCCESS':
+                    if j.state == 'SUCCESS':
                         break
                 except TimeoutError:
                     raise  # Re-raise the TimeoutError
                 except Exception:
                     continue
 
-    def to_pandas(self):        
+    def to_pandas(self):
         # Calculate how many jobs have completed.
-        success_count = sum(j._job.state == 'SUCCESS' for j in self._jobs)
-        assert success_count == len(self._jobs), f"Only {success_count} out of {len(self._jobs)} jobs have completed successfully."
-        return pandas.concat([j.get_dataset().to_dataframe().to_pandas() for j in self._jobs])
-    
+        success_count = sum(j.state == 'SUCCESS' for j in self._jobs)
+        assert success_count == len(
+            self._jobs
+        ), f"Only {success_count} out of {len(self._jobs)} jobs have completed successfully."
+        return MultiDataset([j.get_dataset() for j in self._jobs]).to_pandas()
+
     def cancel(self):
         for j in self._jobs:
-            j.cancel_job()
+            j.cancel()
+
+
+def _dataset_to_pandas(ds: SavedDataset):
+    if hasattr(ds, "to_dataframe"):
+        return ds.to_dataframe().to_pandas()
+
+    return ds.to_pandas()
+
 
 class MultiDataset:
     def __init__(self, datasets: List[SavedDataset]):
         self._datasets = datasets
 
-    def to_pandas(self) -> pandas.DataFrame:        
-        return pandas.concat([ds.to_dataframe().to_pandas() for ds in self._datasets])    
-    
+    def to_pandas(self) -> pandas.DataFrame:
+        return pandas.concat([_dataset_to_pandas(ds) for ds in self._datasets])
+
     def cancel_jobs(self):
         for ds in self._datasets:
             job_id = IdHelper.to_string(ds._proto.saved_dataset.creation_task_id)
-            materialization_api.cancel_dataset_job(ds.name, ds._proto.info.workspace, job_id)
+            materialization_api.cancel_dataset_job(
+                workspace=ds._proto.info.workspace,
+                job_id=job_id,
+                dataset=ds.name
+            )
 
-def start_dataset_jobs_in_parallel(df: TectonDataFrame, dataset_name, num_splits, split_strategy='even', **kwargs):
+
+def start_dataset_jobs_in_parallel(df: TectonDataFrame,
+                                   dataset_name,
+                                   num_splits,
+                                   split_strategy='even',
+                                   **kwargs) -> MultiDatasetJob:
     params = df._request_params
     jobs = []
 
     if isinstance(params, GetFeaturesForEventsParams):
-        chunks = split_spine(params.events, params.join_keys, num_splits, strategy=split_strategy)
+        chunks = split_spine(params.events,
+                             params.join_keys,
+                             num_splits,
+                             strategy=split_strategy)
         for idx, spine_chunk in enumerate(chunks):
             subtask_params = copy.copy(params)
             subtask_params.events = spine_chunk
             subtask_df = get_features_from_params(subtask_params)
-            
+
             job = subtask_df.start_dataset_job(
-                dataset_name=f"{dataset_name}:{idx}", **kwargs
-            )
+                dataset_name=f"{dataset_name}:{idx}", **kwargs)
             jobs.append(job)
     else:
-        raise RuntimeError("Only get_features_for_events is currently supported")
+        raise RuntimeError(
+            "Only get_features_for_events is currently supported")
 
     return MultiDatasetJob(jobs)
 
-def retrieve_dataset(workspace, dataset_name):
+
+def retrieve_dataset(workspace, dataset_name) -> MultiDataset:
     datasets = []
     for remote_dataset_name in workspace.list_datasets():
         if remote_dataset_name.startswith(dataset_name + ":"):
-             datasets.append(workspace.get_dataset(remote_dataset_name))
-    
+            datasets.append(workspace.get_dataset(remote_dataset_name))
+
     # Sort the datasets by the numeric index in the dataset name
     def get_index(ds):
         try:
             return int(ds.name.split(':')[-1])
         except ValueError:
             return float('inf')
-    
+
     datasets = sorted(datasets, key=get_index)
-    
+
     if not datasets:
-        raise ValueError(f"No datasets found with name starting with '{dataset_name}:'")
-    
+        raise ValueError(
+            f"No datasets found with name starting with '{dataset_name}:'")
+
     return MultiDataset(datasets)
 
 
 def cancel_dataset_jobs(workspace, dataset_name):
     multi_dataset = retrieve_dataset(workspace, dataset_name)
-    multi_dataset.cancel()
-
+    multi_dataset.cancel_jobs()
