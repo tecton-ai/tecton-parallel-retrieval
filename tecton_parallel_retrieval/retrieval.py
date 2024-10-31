@@ -41,7 +41,6 @@ def start_dataset_jobs_in_parallel(
     num_splits,
     compute_mode: Union[ComputeMode, str] = ComputeMode.RIFT,
     staging_path: Optional[str] = None,
-    timestamp_key: Optional[str] = None,
     **kwargs
 ) -> MultiDatasetJob:
     params = df._request_params
@@ -49,7 +48,7 @@ def start_dataset_jobs_in_parallel(
     compute_mode = offline_retrieval_compute_mode(compute_mode)
 
     if isinstance(params, GetFeaturesForEventsParams):
-        timestamp_key = timestamp_key or infer_timestamp(params.events)
+        timestamp_key = params.timestamp_key or infer_timestamp(params.events)
 
         chunks = split_spine(params.events,
                              params.join_keys,
