@@ -2,13 +2,13 @@ from setuptools import setup, find_packages
 
 setup(
     name='tecton_parallel_retrieval',
-    version='0.1.0b6',
+    version='0.1.0',
     description='[private preview] Parallel feature retrieval for Tecton',
     author='Tecton',
     packages=find_packages(),
     license="Apache License 2.0",
     install_requires=[
-        "tecton>=0.9",
+        "tecton>=1.0",
     ],
     extras_require={
         'spark': ["databricks-sdk", "pyspark"],
