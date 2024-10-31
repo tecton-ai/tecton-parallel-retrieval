@@ -6,48 +6,72 @@ clusters. This feature is currently in alpha and is subject to change.
 
 This can be found on pypi https://pypi.org/project/tecton-parallel-retrieval/
 
-## How to Run(Spark)
+## How to Run (Spark)
 
 ```python
+import tecton
+import tecton_parallel_retrieval as retrieval
 
-from tecton_parallel_retrieval.spark import run_parallel_query
+ws = tecton.Workspace('prod')
+feature_service = ws.get_feature_service('my_feature_service')
 
-run_parallel_query(
-        spine_path = "s3://path/to/your/spine", # Must be Parquet format
-        spine_partition_col="ds", # None if un-partitioned
-        output_path = "s3://path/to/output",
-        timestamp_key = "timestamp", # timestamp key of spine
-        feature_service_name= "your_feature_service",
-        workspace_name= "your_workspace",
+spine = spark.read.parquet('s3://...')
 
-        max_splits=10, # Number of chunks to break the job up into
-        max_parallel_jobs=3, # Number of parallel Databricks clusters that run retrieval
+df = feature_service.get_features_for_events(spine)
 
-				# Databricks configs
-        databricks_instance_profile_arn = "arn:aws:iam::111122223333:instance-profile/your-databricks-instance-profile",
-        databricks_driver_node_type = "m5.xlarge",
-        databricks_worker_node_type = "m5.8xlarge",
-        databricks_policy_id = None,
-        databricks_runtime_version = "9.1.x-scala2.12",
-        databricks_worker_node_count = 1,
-    )
+multi_job = retrieval.start_dataset_jobs_in_parallel(
+    df,
+    dataset_name="tecton-parallel-retrieval-test",
+    num_splits=5,
+    compute_mode='spark',
+    staging_path='s3://bucket/staging',  # Materialization job role should have read access
+    tecton_materialization_runtime="1.0.10",
+    cluster_config=tecton.EMRClusterConfig(instance_type='m5.8xlarge', spark_config={'spark.sql.shuffle.partitions': '5000'})
+)
+
+multi_job.wait_for_all_jobs()
+
+multi_job.to_spark()
+```
+
+## How to Run (Rift)
+
+```python
+import tecton
+import tecton_parallel_retrieval as retrieval
+
+ws = tecton.Workspace('prod')
+feature_service = ws.get_feature_service('my_feature_service')
+
+spine = pandas.read_parquet('...')
+
+df = feature_service.get_features_for_events(spine)
+
+multi_job = retrieval.start_dataset_jobs_in_parallel(
+    df,
+    dataset_name="tecton-parallel-retrieval-test",
+    num_splits=5,
+    compute_mode='rift',
+    environment='rift-core-1.0',
+    cluster_config=tecton.RiftBatchConfig(instance_type='m5.8xlarge')
+)
+
+multi_job.wait_for_all_jobs()
+
+multi_job.to_pandas()
 
 ```
 
-## How to Run(Rift)
+## How to retrieve existing parallel dataset
 
 ```python
+import tecton
+import tecton_parallel_retrieval as retrieval
 
-from tecton_parallel_retrieval.rift import start_dataset_jobs_in_parallel, retrieve_dataset
+ws = tecton.Workspace('prod')
 
-workspace = tecton.get_workspace('your_workspace')
-fv = workspace.get_feature_view('your_feature_view')
-df = fv.get_features_for_events(events=spine, timestamp_key='your_timestamp_key')
-jobs = retrieval.start_dataset_jobs_in_parallel(df, "your_dataset_name", 3)
-jobs.wait_for_all_jobs()
-ds = retrieve_dataset(workspace, "your_dataset_name")
-
-
+multi_ds = retrieval.retrieve_dataset(ws, "tecton-parallel-retrieval-test")
+multi_ds.to_pandas()
 ```
 
 ## How to Install and Upload
