@@ -1,8 +1,7 @@
 # Tecton Parallel Retrieval (Experimental)
 
 Tecton Parallel Retrieval is an experimental feature that allows you to
-retrieve feature values in parallel, using multiple Databricks Spark
-clusters. This feature is currently in alpha and is subject to change.
+retrieve feature values in parallel, using multiple compute clusters (works for Spark and Rift). This feature is currently in alpha and is subject to change.
 
 This can be found on pypi https://pypi.org/project/tecton-parallel-retrieval/
 
@@ -86,7 +85,7 @@ python -m build
 ```
 
 The following command uploads it to pypi.
-Make sure you update the version in setup.py, as well as the dependency versions in setup.py and the hardcoded databricks job dependencies in main.py
+Make sure you update the version in setup.py, as well as the dependency versions in setup.py and the hardcoded job dependencies in main.py
 
 ```bash
 
